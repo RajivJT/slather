@@ -226,7 +226,7 @@ class Simulator {
     // the main function
     public static void main(String[] args)
     {
-	boolean gui = false;
+	boolean gui = true;
 	boolean recompile = true;
 	int game_id = -1;
 	String game_path = null;
