@@ -21,45 +21,127 @@ public class Player implements slather.sim.Player {
 		gen = new Random();
 	}
 
-	public Move play(Cell player_cell, byte memory, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
-		if (player_cell.getDiameter() >= 2 /*&& (calCrowdInDirection(player_cell, (int)memory, nearby_cells, nearby_pheromes) > COMF_RANGE)*/) // reproduce when it is not very crowd
-			return new Move(true, (byte)-1, (byte)-1);
+    public Move invader(byte memory) {
+        int role = unpackRole(memory);
+        int angle = unpackAngle(memory);
+        int duration = unpackDuration(memory);
 
-		if (memory > 0) { // follow previous direction in early stage, try least crowd direction in later
-			if (calCrowdSurround(player_cell, nearby_cells, nearby_pheromes) < EARLY_STAGE) {
-				Point vector = extractVectorFromAngle( (int)memory);
-				// check for collisions
-				if (!collides( player_cell, vector, nearby_cells, nearby_pheromes))
-					return new Move(vector, memory);
-			}
-		}
+        // YOUR CODE GOES HERE
 
-		// otherwise, try random directions to go in until one doesn't collide
-		double max_range = 0;
-		int direction = 0;
-		Point vector = new Point(0, 0);
-		for (int arg = 1; arg <= 180; arg += 10) {
-			Point current_vector = extractVectorFromAngle(arg);
-			if (collides(player_cell, current_vector, nearby_cells, nearby_pheromes)) continue;
-			double current_range = calCrowdInDirection(player_cell, arg, nearby_cells, nearby_pheromes);
-			if (current_range > max_range) {
-				max_range = current_range;
-				direction = arg;
-				vector = current_vector;
-			} else
-			if (current_range == max_range) {
-				int tmp = gen.nextInt(10);
-				if (tmp < 1) {
-					direction = arg;
-					vector = current_vector;
-				}
-			}
-		}
-		if (!collides(player_cell, vector, nearby_cells, nearby_pheromes))
-			return new Move(vector, (byte) direction);
+        byte newMemory = packByte(role, angle, duration + 1);
+		return new Move(new Point(0,0), newMemory);
+    }
 
-		// if all tries fail, just chill in place
-		return new Move(new Point(0,0), (byte)0);
+    public Move explorer(byte memory) {
+        int role = unpackRole(memory);
+        int angle = unpackAngle(memory);
+        int duration = unpackDuration(memory);
+
+        // YOUR CODE GOES HERE
+
+        byte newMemory = packByte(role, angle, duration + 1);
+		return new Move(new Point(0,0), newMemory);
+    }
+
+    public Move defender(byte memory) {
+        int role = unpackRole(memory);
+        int angle = unpackAngle(memory);
+        int duration = unpackDuration(memory);
+
+        // YOUR CODE GOES HERE
+
+        byte newMemory = packByte(role, angle, duration + 1);
+		return new Move(new Point(0,0), newMemory);
+    }
+
+    public Move defenderLeader(byte memory) {
+        int role = unpackRole(memory);
+        int angle = unpackAngle(memory);
+        int duration = unpackDuration(memory);
+
+        // YOUR CODE GOES HERE
+
+        byte newMemory = packByte(role, angle, duration + 1);
+		return new Move(new Point(0,0), newMemory);
+    }
+
+    private int unpackRole(byte memory) {
+        memory = (byte) (memory >> 6);
+        return memory & 0x3;
+    }
+
+    private int unpackAngle(byte memory) {
+        memory = (byte) (memory >> 3);
+        return memory & 0x7;
+    }
+
+    private int unpackDuration(byte memory) {
+        return memory & 0x7;
+    }
+
+    private byte packByte(int role, int angle, int duration) {
+        // Meaning:
+        //
+        // role = {0 = explorer, 1 = invader, 2 = defender, 3 = defenderLeader}
+        // angle = the angle of the vector in 45-degree increments (therefore an angle value of
+        //         3 indicates an actual angle of 135 degrees)
+        // duration = the number of turns that the cell has followed this direction
+
+        // Clamp values that are too large
+        if (role > 3)
+            role = 3;
+        if (angle > 7)
+            angle = 7;
+        if (duration > 7)
+            duration = 7;
+
+        byte memory = 0;
+        memory = (byte) role;
+        memory = (byte) (memory << 3);
+        memory |= (byte) angle;
+        memory = (byte) (memory << 3);
+        memory |= (byte) duration;
+
+        return memory;
+    }
+
+	public Move play(Cell player_cell, byte memory, Set<Cell> nearby_cells,
+                     Set<Pherome> nearby_pheromes) {
+		if (player_cell.getDiameter() >= 2) {
+            // One of the daughter cells maintains the current cell's role, and the other cell
+            // receives a random role and angle
+            int currentRole = unpackRole(memory);
+            int currentAngle = unpackAngle(memory);
+            int currentDuration = unpackDuration(memory);
+            byte modifiedMemory = packByte(currentRole, currentAngle, currentDuration + 1);
+
+            //int newRole = gen.nextInt(4);
+            int newRole = 1;
+            int newAngle = gen.nextInt(8);
+            byte newMemory = packByte(newRole, newAngle, 0);
+
+            return new Move(true, modifiedMemory, newMemory);
+        }
+
+        int role = unpackRole(memory);
+        Move newMove;
+        System.out.println(role);
+
+        // Get the next move based on the current role
+        if (role == 0)
+            newMove = explorer(memory);
+        else if (role == 1)
+            newMove = invader(memory);
+        else if (role == 2)
+            newMove = defender(memory);
+        else
+            newMove = defenderLeader(memory);
+
+        if (!collides(player_cell, newMove.vector, nearby_cells, nearby_pheromes))
+            return newMove;
+
+		// If all tries fail, just chill in place with a random angle
+		return new Move(new Point(0,0), packByte(role, gen.nextInt(8), 0));
 	}
 
 	double calCrowdSurround(Cell player_cell, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
