@@ -115,8 +115,7 @@ public class Player implements slather.sim.Player {
             int currentDuration = unpackDuration(memory);
             byte modifiedMemory = packByte(currentRole, currentAngle, currentDuration + 1);
 
-            //int newRole = gen.nextInt(4);
-            int newRole = 1;
+            int newRole = gen.nextInt(4);
             int newAngle = gen.nextInt(8);
             byte newMemory = packByte(newRole, newAngle, 0);
 
