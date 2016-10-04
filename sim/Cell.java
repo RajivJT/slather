@@ -73,7 +73,7 @@ public class Cell extends GridObject{
 	Iterator<Cell> cell_it = cells.iterator();
 	while (cell_it.hasNext()) {
 	    Cell next = cell_it.next();
-	    new_diameter = Math.min(new_diameter, 2*(distance(next) - 0.5*next.getDiameter()));
+	    new_diameter = Math.min(new_diameter, 2*(distance(next) + 0.5*getDiameter()));
 	}
 	if (new_diameter > 2)
 	    new_diameter = 2.0000001;

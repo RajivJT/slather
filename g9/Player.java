@@ -1,6 +1,7 @@
 package slather.g9;
 
 import slather.sim.Cell;
+import slather.sim.GridObject;
 import slather.sim.Point;
 import slather.sim.Move;
 import slather.sim.Pherome;
@@ -11,167 +12,188 @@ public class Player implements slather.sim.Player {
 
 	private Random gen;
 
-	//=========parameters==================================
 	private static double EARLY_STAGE = 1. / 2.;
 	private static double LATE_STAGE = 4. / 5.;
 	private static double COMF_RANGE = 1;
 
-	//==========functions==================================
+    private static int EXPLORER = 0;
+    private static int DEFENDER = 1;
+    private static int ANGLE_INCREMENTS = 3;
+    private static double SCALE_THRESHOLD = 0.1;
+
+    class ScoredObject implements Comparable<ScoredObject> {
+        public GridObject object;
+        public int angle;
+
+        public ScoredObject(GridObject object, int angle) {
+            this.object = object;
+            this.angle = angle;
+        }
+
+        public int compareTo(ScoredObject o) {
+            return this.angle - o.angle;
+        }
+    }
+
 	public void init(double d, int t, int side_length) {
 		gen = new Random();
 	}
 
-    public Move invader(byte memory) {
-        int role = unpackRole(memory);
-        int angle = unpackAngle(memory);
-        int duration = unpackDuration(memory);
-
-        // YOUR CODE GOES HERE
-
-        byte newMemory = packByte(role, angle, duration + 1);
-		return new Move(new Point(0,0), newMemory);
-    }
-
-    public Move explorer(byte memory) {
-        int role = unpackRole(memory);
-        int angle = unpackAngle(memory);
-        int duration = unpackDuration(memory);
-
-        // YOUR CODE GOES HERE
-
-        byte newMemory = packByte(role, angle, duration + 1);
-		return new Move(new Point(0,0), newMemory);
-    }
-
-    public Move defender(byte memory) {
-        int role = unpackRole(memory);
-        int angle = unpackAngle(memory);
-        int duration = unpackDuration(memory);
-
-        // YOUR CODE GOES HERE
-
-        byte newMemory = packByte(role, angle, duration + 1);
-		return new Move(new Point(0,0), newMemory);
-    }
-
-    public Move defenderLeader(byte memory) {
-        int role = unpackRole(memory);
-        int angle = unpackAngle(memory);
-        int duration = unpackDuration(memory);
-
-        // YOUR CODE GOES HERE
-
-        byte newMemory = packByte(role, angle, duration + 1);
-		return new Move(new Point(0,0), newMemory);
-    }
-
-    private int unpackRole(byte memory) {
-        memory = (byte) (memory >> 6);
-        return memory & 0x3;
-    }
-
-    private int unpackAngle(byte memory) {
-        memory = (byte) (memory >> 3);
-        return memory & 0x7;
-    }
-
-    private int unpackDuration(byte memory) {
-        return memory & 0x7;
-    }
-
-    private byte packByte(int role, int angle, int duration) {
-        // Meaning:
-        //
-        // role = {0 = explorer, 1 = invader, 2 = defender, 3 = defenderLeader}
-        // angle = the angle of the vector in 45-degree increments (therefore an angle value of
-        //         3 indicates an actual angle of 135 degrees)
-        // duration = the number of turns that the cell has followed this direction
-
-        // Clamp values that are too large
-        if (role > 3)
-            role = 3;
-        if (angle > 7)
-            angle = 7;
-        if (duration > 7)
-            duration = 7;
-
-        byte memory = 0;
-        memory = (byte) role;
-        memory = (byte) (memory << 3);
-        memory |= (byte) angle;
-        memory = (byte) (memory << 3);
-        memory |= (byte) duration;
+    private byte packByteExplorer(int angle) {
+        byte memory = (byte) 0;
+        memory = (byte) (memory << 7);
+        memory = (byte) angle;
 
         return memory;
     }
 
-	public Move play(Cell player_cell, byte memory, Set<Cell> nearby_cells,
-                     Set<Pherome> nearby_pheromes) {
-		if (player_cell.getDiameter() >= 2) {
-            // One of the daughter cells maintains the current cell's role, and the other cell
-            // receives a random role and angle
-            int currentRole = unpackRole(memory);
-            int currentAngle = unpackAngle(memory);
-            int currentDuration = unpackDuration(memory);
-            byte modifiedMemory = packByte(currentRole, currentAngle, currentDuration + 1);
+    private byte packByteDefender() {
+        byte memory = (byte) 1;
+        memory = (byte) (memory << 7);
 
-            int newRole = gen.nextInt(4);
-            int newAngle = gen.nextInt(8);
-            byte newMemory = packByte(newRole, newAngle, 0);
+        return memory;
+    }
 
-            return new Move(true, modifiedMemory, newMemory);
+    private int unpackRole(byte memory) {
+        memory = (byte) (memory >> 7);
+        return memory & 0x1;
+    }
+
+    private int unpackAngleExplorer(byte memory) {
+        return memory & 0x7F;
+    }
+
+    private ArrayList<GridObject> getNearbyObstacles(Cell player_cell, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
+        ArrayList<GridObject> nearby_obstacles = new ArrayList<GridObject>();
+
+        for (Cell cell : nearby_cells) {
+            nearby_obstacles.add(cell);
         }
 
-        int role = unpackRole(memory);
-        Move newMove;
-        System.out.println(role);
+        for (Pherome pherome : nearby_pheromes) {
+            if (pherome.player != player_cell.player) {
+                nearby_obstacles.add(pherome);
+            }
+        }
 
-        // Get the next move based on the current role
-        if (role == 0)
-            newMove = explorer(memory);
-        else if (role == 1)
-            newMove = invader(memory);
-        else if (role == 2)
-            newMove = defender(memory);
-        else
-            newMove = defenderLeader(memory);
+        return nearby_obstacles;
+    }
 
-        if (!collides(player_cell, newMove.vector, nearby_cells, nearby_pheromes))
-            return newMove;
+    private Move getDefaultMove(Cell player_cell, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
+        // if no previous direction specified or if there was a collision, try random directions to go in until one doesn't collide
+        for (double scale = 1.0; scale > SCALE_THRESHOLD; scale -= 0.1) {
+            int angle = gen.nextInt(360 / ANGLE_INCREMENTS) + 1;
+            Point vector = extractVectorFromAngle(angle, scale);
+            if (!collides(player_cell, vector, nearby_cells, nearby_pheromes)) {
+                return new Move(vector, packByteExplorer(angle));
+            }
+        }
 
-		// If all tries fail, just chill in place with a random angle
-		return new Move(new Point(0,0), packByte(role, gen.nextInt(8), 0));
-	}
+        // if all tries fail, just chill in place
+        return new Move(new Point(0,0), (byte)0);
+    }
 
-	double calCrowdSurround(Cell player_cell, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
-		int cnt = 0;
-		for (int arg = 1; arg <= 180; arg += 5) {
-			Point current_vector = extractVectorFromAngle(arg);
-			if (collides(player_cell, current_vector, nearby_cells, nearby_pheromes))
-				++cnt;
-		}
-		return (double)cnt / 36.;
-	}
+    private int getAngleFrom(Cell player_cell, GridObject obstacle) {
+        Point src = player_cell.getPosition();
+        Point dest = obstacle.getPosition();
 
-	double calCrowdInDirection(Cell player_cell, int arg, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
-		if (arg > 0) {
-			Point vector = extractVectorFromAngle(arg);
-			if (collides(player_cell, vector, nearby_cells, nearby_pheromes)) return 0;
+        double angle = Math.toDegrees(Math.atan2(dest.y - src.y, dest.x - src.x));
+        if (angle < 0.0) {
+            angle += 360.0;
+        }
 
-			Point destination = player_cell.getPosition().move(vector);
-			if (calCrowdSurround(player_cell, nearby_cells, nearby_pheromes) > LATE_STAGE) return 1;
-		}
+        return (int) (angle / ANGLE_INCREMENTS);
+    }
 
-		for (int delta = 1; arg - delta > 0 && arg + delta <= 180 && delta < 30; ++delta) {
-			Point vector1 = extractVectorFromAngle(arg - delta);
-			Point vector2 = extractVectorFromAngle(arg + delta);
-			if (!collides(player_cell, vector1, nearby_cells, nearby_pheromes) &&
-			    !collides(player_cell, vector2, nearby_cells, nearby_pheromes))
-				continue;
-			return delta;
-		}
-		return 90;
-	}
+    private int getLargestFreeAngle(Cell player_cell, ArrayList<GridObject> nearby_obstacles) {
+        ArrayList<ScoredObject> scored_obstacles = new ArrayList<ScoredObject>();
+
+        for (GridObject obstacle : nearby_obstacles) {
+            ScoredObject scored_obstacle = new ScoredObject(obstacle, getAngleFrom(player_cell, obstacle));
+            scored_obstacles.add(scored_obstacle);
+        }
+
+        Collections.sort(scored_obstacles);
+        int largest_free_angle = 0;
+        int ending_angle = -1;
+        int target_angle = -1;
+
+        for (int i = 1; i < scored_obstacles.size(); i++) {
+            int free_angle = scored_obstacles.get(i).angle - scored_obstacles.get(i-1).angle;
+            if (free_angle > largest_free_angle) {
+                largest_free_angle = free_angle;
+                ending_angle = scored_obstacles.get(i).angle;
+                target_angle = ending_angle - (largest_free_angle / 2);
+            }
+        }
+
+        // Account for the wraparound effect
+        int first_angle = scored_obstacles.get(0).angle;
+        int last_angle = scored_obstacles.get(scored_obstacles.size() - 1).angle;
+        int wraparound_free_angle = first_angle + (360 / ANGLE_INCREMENTS) - last_angle;
+        if (wraparound_free_angle > largest_free_angle) {
+            largest_free_angle = wraparound_free_angle;
+            ending_angle = first_angle;
+            target_angle = ending_angle - (largest_free_angle / 2);
+
+            if (target_angle < 0) {
+                target_angle += 360 / ANGLE_INCREMENTS;
+            }
+        }
+
+        return target_angle;
+    }
+
+    private Move getExplorerMove(Cell player_cell, byte memory, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
+        ArrayList<GridObject> nearby_obstacles = getNearbyObstacles(player_cell, nearby_cells, nearby_pheromes);
+        if (nearby_obstacles.size() > 0) {
+            // Move in the direction of the largest free angle
+            if (nearby_obstacles.size() == 1) {
+                int angle = getAngleFrom(player_cell, nearby_obstacles.get(0));
+                int target_angle = angle + (180 / ANGLE_INCREMENTS);
+                if (target_angle > (360 / ANGLE_INCREMENTS)) {
+                    target_angle -= 360 / ANGLE_INCREMENTS;
+                }
+
+                for (double scale = 1.0; scale > SCALE_THRESHOLD; scale -= 0.1) {
+                    Point vector = extractVectorFromAngle(target_angle, scale);
+                    if (!collides(player_cell, vector, nearby_cells, nearby_pheromes)) {
+                        return new Move(vector, packByteExplorer(target_angle));
+                    }
+                }
+            } else {
+                int target_angle = getLargestFreeAngle(player_cell, nearby_obstacles);
+                for (double scale = 1.0; scale > SCALE_THRESHOLD; scale -= 0.1) {
+                    Point vector = extractVectorFromAngle(target_angle, scale);
+                    if (!collides(player_cell, vector, nearby_cells, nearby_pheromes)) {
+                        return new Move(vector, packByteExplorer(target_angle));
+                    }
+                }
+            }
+        } else {
+            // Move in the same direction
+            Point previous_direction = extractVectorFromAngle(unpackAngleExplorer(memory), 1.0);
+            if (!collides(player_cell, previous_direction, nearby_cells, nearby_pheromes)) {
+                return new Move(previous_direction, memory);
+            }
+        }
+
+        return getDefaultMove(player_cell, nearby_cells, nearby_pheromes);
+    }
+
+    public Move play(Cell player_cell, byte memory, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
+        if (player_cell.getDiameter() >= 2) {
+            byte first_byte = packByteExplorer(gen.nextInt(360/ANGLE_INCREMENTS) + 1);
+            byte second_byte = packByteExplorer(gen.nextInt(360/ANGLE_INCREMENTS) + 1);
+            return new Move(true, first_byte, second_byte);
+        }
+
+        if (unpackRole(memory) == EXPLORER) {
+            return getExplorerMove(player_cell, memory, nearby_cells, nearby_pheromes);
+        } else {
+            return new Move(new Point(0,0), (byte)0);
+        }
+    }
 
 	// check if moving player_cell by vector collides with any nearby cell or hostile pherome
 	private boolean collides(Cell player_cell, Point vector, Set<Cell> nearby_cells, Set<Pherome> nearby_pheromes) {
@@ -191,9 +213,9 @@ public class Player implements slather.sim.Player {
 		return false;
 	}
 
-	// convert an angle (in 2-deg increments) to a vector with magnitude Cell.move_dist (max allowed movement distance)
-	private Point extractVectorFromAngle(int arg) {
-		double theta = Math.toRadians( 2* (double)arg );
+	// convert an angle (in ANGLE_INCREMENTS increments) to a vector with magnitude Cell.move_dist (max allowed movement distance)
+	private Point extractVectorFromAngle(int arg, double scale) {
+		double theta = Math.toRadians(ANGLE_INCREMENTS * (double)arg);
 		double dx = Cell.move_dist * Math.cos(theta);
 		double dy = Cell.move_dist * Math.sin(theta);
 		return new Point(dx, dy);
