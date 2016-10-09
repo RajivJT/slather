@@ -216,8 +216,8 @@ public class Player implements slather.sim.Player {
 	// convert an angle (in ANGLE_INCREMENTS increments) to a vector with magnitude Cell.move_dist (max allowed movement distance)
 	private Point extractVectorFromAngle(int arg, double scale) {
 		double theta = Math.toRadians(ANGLE_INCREMENTS * (double)arg);
-		double dx = Cell.move_dist * Math.cos(theta);
-		double dy = Cell.move_dist * Math.sin(theta);
+		double dx = Cell.move_dist * Math.cos(theta) * scale;
+		double dy = Cell.move_dist * Math.sin(theta) * scale;
 		return new Point(dx, dy);
 	}
 
